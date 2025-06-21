@@ -1,85 +1,109 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>WebAR Measurement</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/ARButton.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebAR Prise de mesures</title>
+  <style>
+    body, html {
+      margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif;
+      height: 100vh; background: #000;
+      color: white; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    #ar-button {
+      padding: 1em 2em;
+      font-size: 1.2em;
+      background: #28a745;
+      border: none; border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      margin-bottom: 1em;
+    }
+    #info {
+      text-align: center;
+      max-width: 320px;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      position: fixed;
+      top: 0; left: 0;
+      z-index: -1;
+    }
+  </style>
 </head>
-<body style="margin:0; overflow:hidden;">
-  <button id="measureBtn">Take Measurement</button>
-  <div id="distance"></div>
-  <script>
-    let camera, scene, renderer;
-    let controller;
-    let points = [];
-    let line;
+<body>
 
-    init();
+<button id="ar-button">Démarrer la prise de mesures AR</button>
+<div id="info">Appuie sur le bouton pour lancer la caméra AR.<br />Compatible sur mobiles récents avec Chrome/Edge.</div>
 
-    function init() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera();
+<script type="module">
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js';
+  import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/webxr/ARButton.js';
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.xr.enabled = true;
-      document.body.appendChild(renderer.domElement);
+  let camera, scene, renderer;
+  let controller;
 
-      document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+  const button = document.getElementById('ar-button');
+  const info = document.getElementById('info');
 
-      controller = renderer.xr.getController(0);
-      controller.addEventListener('select', onSelect);
-      scene.add(controller);
-
-      animate();
+  button.addEventListener('click', () => {
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        if (supported) {
+          initAR();
+          button.style.display = 'none';
+          info.textContent = "AR activé, pointe la caméra pour prendre des mesures.";
+        } else {
+          alert('WebXR AR non supporté sur ce device ou navigateur.');
+        }
+      });
+    } else {
+      alert('WebXR non disponible dans ce navigateur.');
     }
+  });
 
-    function onSelect() {
-      const position = new THREE.Vector3();
-      controller.getWorldPosition(position);
+  function initAR() {
+    scene = new THREE.Scene();
 
-      const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(0.01, 16, 16),
-        new THREE.MeshBasicMaterial({ color: 0xff0000 })
-      );
-      sphere.position.copy(position);
-      scene.add(sphere);
+    camera = new THREE.PerspectiveCamera();
 
-      points.push(position.clone());
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
 
-      if(points.length === 2) {
-        drawLine(points[0], points[1]);
-        const dist = points[0].distanceTo(points[1]);
-        document.getElementById("distance").innerText = `Distance: ${dist.toFixed(2)}m`;
-        // Send result to Flutter
-        window.parent.postMessage({type:"measurement", distance: dist}, "*");
-      }
-    }
+    // Bouton AR natif
+    document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
 
-    function drawLine(p1, p2) {
-      const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
-      const geometry = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-      if(line) scene.remove(line);
-      line = new THREE.Line(geometry, material);
-      scene.add(line);
-    }
+    // Contrôleur
+    controller = renderer.xr.getController(0);
+    scene.add(controller);
 
-    function animate() {
-      renderer.setAnimationLoop(render);
-    }
+    // Exemple simple : un cube qui apparaîtra à l'emplacement touché
+    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    const material = new THREE.MeshNormalMaterial();
+    const cube = new THREE.Mesh(geometry, material);
+    cube.visible = false;
+    scene.add(cube);
 
-    function render() {
-      renderer.render(scene, camera);
-    }
+    // Raycaster hit test pour placer l'objet (simulateur de mesure)
+    controller.addEventListener('select', () => {
+      cube.visible = true;
+      // ici tu peux récupérer la position pour mesurer la distance etc
+      const position = controller.position;
+      cube.position.set(position.x, position.y, position.z);
+      console.log('Point placé à:', position);
+      info.textContent = `Point placé : x=${position.x.toFixed(2)} y=${position.y.toFixed(2)} z=${position.z.toFixed(2)}`;
+    });
 
-    // Optional: Reset measurement on button press
-    document.getElementById('measureBtn').onclick = () => {
-      points = [];
-      if(line) scene.remove(line);
-      document.getElementById("distance").innerText = '';
-    };
-  </script>
+    renderer.setAnimationLoop(render);
+  }
+
+  function render() {
+    renderer.render(scene, camera);
+  }
+</script>
+
 </body>
 </html>
