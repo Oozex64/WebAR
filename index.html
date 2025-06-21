@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebAR Measurement</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/ARButton.js"></script>
+</head>
+<body style="margin:0; overflow:hidden;">
+  <button id="measureBtn">Take Measurement</button>
+  <div id="distance"></div>
+  <script>
+    let camera, scene, renderer;
+    let controller;
+    let points = [];
+    let line;
+
+    init();
+
+    function init() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera();
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
+
+      document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+
+      controller = renderer.xr.getController(0);
+      controller.addEventListener('select', onSelect);
+      scene.add(controller);
+
+      animate();
+    }
+
+    function onSelect() {
+      const position = new THREE.Vector3();
+      controller.getWorldPosition(position);
+
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.01, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xff0000 })
+      );
+      sphere.position.copy(position);
+      scene.add(sphere);
+
+      points.push(position.clone());
+
+      if(points.length === 2) {
+        drawLine(points[0], points[1]);
+        const dist = points[0].distanceTo(points[1]);
+        document.getElementById("distance").innerText = `Distance: ${dist.toFixed(2)}m`;
+        // Send result to Flutter
+        window.parent.postMessage({type:"measurement", distance: dist}, "*");
+      }
+    }
+
+    function drawLine(p1, p2) {
+      const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+      const geometry = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+      if(line) scene.remove(line);
+      line = new THREE.Line(geometry, material);
+      scene.add(line);
+    }
+
+    function animate() {
+      renderer.setAnimationLoop(render);
+    }
+
+    function render() {
+      renderer.render(scene, camera);
+    }
+
+    // Optional: Reset measurement on button press
+    document.getElementById('measureBtn').onclick = () => {
+      points = [];
+      if(line) scene.remove(line);
+      document.getElementById("distance").innerText = '';
+    };
+  </script>
+</body>
+</html>
